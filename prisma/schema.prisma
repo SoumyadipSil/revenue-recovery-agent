@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id                        String   @id @default(uuid())
+  amount                    Float
+  currency                  String
+  payment_method            String
+  decline_code              String
+  customer_tenure_days      Int
+  retry_count_before_agent  Int
+  true_failure_cause        String   // Hidden ground truth
+  created_at                DateTime @default(now())
+
+  classifications           Classification[]
+  audit_logs                AuditLog[]
+}
+
+model Classification {
+  id              String   @id @default(uuid())
+  transaction_id  String
+  predicted_cause String
+  confidence      Float
+  reasoning_text  String
+  model_used      String
+  created_at      DateTime @default(now())
+
+  transaction     Transaction @relation(fields: [transaction_id], references: [id])
+  decisions       Decision[]
+}
+
+model Decision {
+  id                String   @id @default(uuid())
+  transaction_id    String
+  classification_id String
+  proposed_action   String
+  guardrail_checks  Json     // { max_retries: true, confidence: false, etc. }
+  final_action      String
+  blocked_reason    String?
+  created_at        DateTime @default(now())
+
+  classification    Classification @relation(fields: [classification_id], references: [id])
+  executions        Execution[]
+}
+
+model Execution {
+  id                String   @id @default(uuid())
+  decision_id       String
+  action_taken      String
+  simulated_outcome String   // recovered, not_recovered, pending
+  amount_recovered  Float
+  executed_at       DateTime @default(now())
+
+  decision          Decision @relation(fields: [decision_id], references: [id])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  transaction_id String
+  event_type     String
+  payload        Json
+  timestamp      DateTime @default(now())
+
+  transaction    Transaction @relation(fields: [transaction_id], references: [id])
+}
