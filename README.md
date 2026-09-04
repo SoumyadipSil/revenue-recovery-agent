@@ -39,7 +39,7 @@ Before any proposed action is executed, it must pass these 6 independent, unit-t
 1. **Max Retry Cap:** No transaction may be retried more than 3 times, even if the LLM recommends it.
 2. **Cooldown Window:** Prevents spamming retries too quickly.
 3. **Confidence Threshold:** If the classifier confidence is < 0.6, the action is forced to `ESCALATE_TO_HUMAN`. The system is not allowed to act on guesses.
-4. **Amount Cap:** Automated recovery is restricted to transactions under ₹2000. Large transactions are always escalated.
+4. **Amount Cap:** Automated recovery is restricted to transactions under INR 2000. Large transactions are always escalated.
 5. **Mandatory Justification:** The system refuses to execute any action without a valid reasoning string.
 6. **Provider Failure:** If the LLM providers (NVIDIA NIM and OpenRouter fallback) are unavailable, the system safely routes to human escalation.
 
@@ -52,13 +52,15 @@ To prove this system works without a live payment gateway, we use a seeded simul
 - `FRAUD_SUSPECTED`: 0% chance of automated recovery (hard block).
 - `DO_NOT_HONOR`: 5% chance on retry, 50% if payment link is updated.
 
-## LLM Strategy & Cost
+## LLM Strategy, Resiliency & Cost
 
-To keep the system highly reliable and cost-effective:
-- **Primary:** NVIDIA NIM (Llama 3.3 70B Instruct via OpenAI-compatible endpoint)
-- **Fallback:** OpenRouter (Llama 3.3 70B Instruct)
+To keep the system highly reliable and blazingly fast:
+- **Primary:** NVIDIA NIM Direct (`nvidia/nemotron-3.5-lightning-30b-a3b`) - used for its raw speed and accuracy.
+- **Fallback:** OpenRouter (`nvidia/nemotron-3-ultra-550b-a55b:free`) - used as a safety net.
 
-If NIM fails, the system automatically falls back to OpenRouter. If both fail, the guardrails catch it and escalate the transaction. All outputs are strictly validated using `zod` at runtime.
+**Resilient Architecture:**
+1. **Explicit Schema Prompting:** To prevent JSON validation errors, the system injects strict, exact string literal JSON schemas directly into the System Prompts.
+2. **Graceful Failover:** If NIM times out, the system automatically falls back to OpenRouter. If OpenRouter rate-limits the request (e.g., `429 Rate limit exceeded`), the `callLLM` function catches the error, forces a safe fallback, and the Deterministic Guardrails step in to gracefully fail the transaction as `ESCALATE_TO_HUMAN` with a detailed audit log. The UI never crashes. All outputs are strictly validated using `zod` at runtime.
 
 ## Setup & Run Instructions
 
@@ -93,4 +95,4 @@ If NIM fails, the system automatically falls back to OpenRouter. If both fail, t
 
 ## Handling a Failure Case (Transparency)
 
-During the batch run, you will see transactions that were deliberately escalated or blocked. The **Audit Trail Drill-Down** in the dashboard provides full transparency. For example, if a transaction is for ₹5000, the LLM might suggest `RETRY_NOW`, but the Audit Trail will explicitly show the `amount_cap` guardrail blocking the action and changing it to `ESCALATE_TO_HUMAN`.
+During the batch run, you will see transactions that were deliberately escalated or blocked. The **Audit Trail Drill-Down** in the dashboard provides full transparency. For example, if a transaction is for INR 5000, the LLM might suggest `RETRY_NOW`, but the Audit Trail will explicitly show the `amount_cap` guardrail blocking the action and changing it to `ESCALATE_TO_HUMAN`.
